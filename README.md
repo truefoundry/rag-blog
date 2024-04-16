@@ -109,87 +109,86 @@ We now show how we can add a new vector db to the RAG system. We take example of
 1. Create a new class `QdrantVectorDB` in `backend/modules/vector_db/qdrant.py` that inherits from `BaseVectorDB` and initialize it with `VectorDBConfig`
 
 ```python
-  from langchain_community.vectorstores.qdrant import Qdrant
-  from qdrant_client.http.models import VectorParams, Distance
-  from qdrant_client import QdrantClient, models
+    from langchain_community.vectorstores.qdrant import Qdrant
+    from qdrant_client.http.models import VectorParams, Distance
+    from qdrant_client import QdrantClient, models
 
-  class QdrantVectorDB(BaseVectorDB):
+    class QdrantVectorDB(BaseVectorDB):
     def __init__(self, config: VectorDBConfig):
-      ...
-      # Initialize the qdrant client
-      self.qdrant_client = QdrantClient(
-          url=self.url,
-          port=self.port,
-          prefer_grpc=self.prefer_grpc,
-          prefix=self.prefix,
-      )
+        ...
+        # Initialize the qdrant client
+        self.qdrant_client = QdrantClient(
+            url=self.url,
+            port=self.port,
+            prefer_grpc=self.prefer_grpc,
+            prefix=self.prefix,
+        )
 ```
 
 2. Override the `create_collection` method to create a collection in Qdrant
 
 ```python
-  def create_collection(self, collection_name: str, embeddings: Embeddings):
+    def create_collection(self, collection_name: str, embeddings: Embeddings):
+        # Calculate embedding size
+        partial_embeddings = embeddings.embed_documents(["Initial document"])
+        vector_size = len(partial_embeddings[0])
 
-    # Calculate embedding size
-    partial_embeddings = embeddings.embed_documents(["Initial document"])
-    vector_size = len(partial_embeddings[0])
+        # Create collection given the embeding dimension and simalrity metric
+        self.qdrant_client.create_collection(
+            collection_name=collection_name,
+            vectors_config=VectorParams(
+                size=vector_size,  # embedding dimension
+                distance=Distance.COSINE,
+            ),
+            replication_factor=3,
+        )
 
-    # Create collection given the embeding dimension and simalrity metric
-    self.qdrant_client.create_collection(
-        collection_name=collection_name,
-        vectors_config=VectorParams(
-            size=vector_size,  # embedding dimension
-            distance=Distance.COSINE,
-        ),
-        replication_factor=3,
-    )
-
-    # Create metadata index for the collection
-    self.qdrant_client.create_payload_index(
-        collection_name=collection_name,
-        field_name=f"metadata.{DATA_POINT_FQN_METADATA_KEY}",
-        field_schema=models.PayloadSchemaType.KEYWORD,
-    )
+        # Create metadata index for the collection
+        self.qdrant_client.create_payload_index(
+            collection_name=collection_name,
+            field_name=f"metadata.{DATA_POINT_FQN_METADATA_KEY}",
+            field_schema=models.PayloadSchemaType.KEYWORD,
+        )
 ```
 
 3. Override the `upsert_documents` method to insert the documents in the db
 
 ```python
-  def upsert_documents(
-      self,
-      collection_name: str,
-      documents,
-      embeddings: Embeddings,
-      incremental: bool = True,
+    def upsert_documents(
+        self,
+        collection_name: str,
+        documents,
+        embeddings: Embeddings,
+        incremental: bool = True,
     ):
-      # Get the data point fqns from the documents
-      # fqns uniquely identify the documents
-      # This is used to delete the outdated documents from the db
-      data_point_fqns = []
-      for document in documents:
-          if document.metadata.get(DATA_POINT_FQN_METADATA_KEY):
-              data_point_fqns.append(
-                  document.metadata.get(DATA_POINT_FQN_METADATA_KEY)
-              )
+        # Get the data point fqns from the documents
+        # fqns uniquely identify the documents
+        # This is used to delete the outdated documents from the db
+        data_point_fqns = []
+        for document in documents:
+            if document.metadata.get(DATA_POINT_FQN_METADATA_KEY):
+                data_point_fqns.append(
+                    document.metadata.get(DATA_POINT_FQN_METADATA_KEY)
+                )
 
-      # Add Documents
-      Qdrant(
-          client=self.qdrant_client,
-          collection_name=collection_name,
-          embeddings=embeddings,
-      ).add_documents(documents=documents)
+        # Add Documents
+        Qdrant(
+            client=self.qdrant_client,
+            collection_name=collection_name,
+            embeddings=embeddings,
+        ).add_documents(documents=documents)
 
-      # Get the record ids that are already present in the db (Existing documents that are modified)
-      # These docs should be removed from the db
-      # Used when incremental indexing is enabled
-      record_ids_to_be_upserted: List[str] = self._get_records_to_be_upserted(
-          collection_name=collection_name,
-          data_point_fqns=data_point_fqns,
-          incremental=incremental,
-      )
+        # Get the record ids that are already present in the db (Existing documents that are modified)
+        # These docs should be removed from the db
+        # Used when incremental indexing is enabled
+        record_ids_to_be_upserted: List[str] = self._get_records_to_be_upserted(
+            collection_name=collection_name,
+            data_point_fqns=data_point_fqns,
+            incremental=incremental,
+        )
 
-      # Delete Documents
-      if len(record_ids_to_be_upserted):
+        # Delete Documents
+        if len(record_ids_to_be_upserted):
         for i in range(0, len(record_ids_to_be_upserted), BATCH_SIZE):
             record_ids_to_be_processed = record_ids_to_be_upserted[
                 i : i + BATCH_SIZE
@@ -201,86 +200,90 @@ We now show how we can add a new vector db to the RAG system. We take example of
                 ),
             )
 
-  # This method is used to get the records that are already present in the db
-  def _get_records_to_be_upserted(
-      self, collection_name: str, data_point_fqns: List[str], incremental: bool
-  ):
-      if not incremental:
-          return []
-      # For incremental deletion, we delete the documents with the same document_id
-      stop = False
-      offset = None
-      record_ids_to_be_upserted = []
+    # This method is used to get the records that are already present in the db
+    def _get_records_to_be_upserted(
+        self, collection_name: str,
+        data_point_fqns: List[str],
+        incremental: bool
+    ):
+        if not incremental:
+            return []
+        # For incremental deletion, we delete the documents with the same document_id
+        stop = False
+        offset = None
+        record_ids_to_be_upserted = []
 
-      # we fetch the records in batches based on the data_point_fqns
-      while stop is not True:
-          records, next_offset = self.qdrant_client.scroll(
-              collection_name=collection_name,
-              scroll_filter=models.Filter(
-                  should=[
-                      models.FieldCondition(
-                          key=f"metadata.{DATA_POINT_FQN_METADATA_KEY}",
-                          match=models.MatchAny(
-                              any=data_point_fqns,
-                          ),
-                      ),
-                  ]
-              ),
-              limit=BATCH_SIZE,
-              offset=offset,
-              with_payload=False,
-              with_vectors=False,
-          )
-          for record in records:
-              record_ids_to_be_upserted.append(record.id)
-              if len(record_ids_to_be_upserted) > MAX_SCROLL_LIMIT:
-                  stop = True
-                  break
-          if next_offset is None:
-              stop = True
-          else:
-              offset = next_offset
-      return record_ids_to_be_upserted
+        # we fetch the records in batches based on the data_point_fqns
+        while stop is not True:
+            records, next_offset = self.qdrant_client.scroll(
+                collection_name=collection_name,
+                scroll_filter=models.Filter(
+                    should=[
+                        models.FieldCondition(
+                            key=f"metadata.{DATA_POINT_FQN_METADATA_KEY}",
+                            match=models.MatchAny(
+                                any=data_point_fqns,
+                            ),
+                        ),
+                    ]
+                ),
+                limit=BATCH_SIZE,
+                offset=offset,
+                with_payload=False,
+                with_vectors=False,
+            )
+            for record in records:
+                record_ids_to_be_upserted.append(record.id)
+                if len(record_ids_to_be_upserted) > MAX_SCROLL_LIMIT:
+                    stop = True
+                    break
+            if next_offset is None:
+                stop = True
+            else:
+                offset = next_offset
+        return record_ids_to_be_upserted
 ```
 
 4. Override the `get_collections` method to get all the collections present in the db
 
 ```python
-  def get_collections(self):
-    collections = self.qdrant_client.list_collections()
-    return [collection.name for collection in collections]
+    def get_collections(self):
+        collections = self.qdrant_client.list_collections()
+        return [collection.name for collection in collections]
 ```
 
 5. Override the `delete_collection` method to delete the collection from the db
 
 ```python
-  def delete_collection(self, collection_name: str):
-    self.qdrant_client.delete_collection(collection_name=collection_name)
+    def delete_collection(self, collection_name: str):
+        self.qdrant_client.delete_collection(collection_name=collection_name)
 ```
 
 6. Override the `get_vector_store` method to get the vector store for the given collection
 
 ```python
-  def get_vector_store(self, collection_name: str, embeddings: Embeddings):
-    return Qdrant(
-            client=self.qdrant_client,
-            embeddings=embeddings,
-            collection_name=collection_name,
-        )
+    def get_vector_store(self, collection_name: str, embeddings: Embeddings):
+        return Qdrant(
+                client=self.qdrant_client,
+                embeddings=embeddings,
+                collection_name=collection_name,
+            )
 ```
 
 7. Override the `get_vector_client` method to get the vector client for the given collection if any
 
 ```python
-  def get_vector_client(self):
-    return self.qdrant_client
+    def get_vector_client(self):
+        return self.qdrant_client
 ```
 
 8. Override the `list_data_point_vectors` method to list already present vectors in the db that are similar to the documents being inserted
 
 ```python
-  def list_data_point_vectors(
-        self, collection_name: str, data_source_fqn: str, batch_size: int = BATCH_SIZE
+    def list_data_point_vectors(
+        self, collection_name: str,
+        data_source_fqn: str,
+        batch_size: int
     ) -> List[DataPointVector]:
 
         stop = False
@@ -340,33 +343,31 @@ We now show how we can add a new vector db to the RAG system. We take example of
 9. Override the `delete_data_point_vectors` method to delete the vectors from the db, used to remove old vectors of the updated document
 
 ```python
-  def delete_data_point_vectors(
-    self,
-    collection_name: str,
-    data_point_vectors: List[DataPointVector],
-    batch_size: int = BATCH_SIZE,
-  ):
+    def delete_data_point_vectors(
+        self,
+        collection_name: str,
+        data_point_vectors: List[DataPointVector],
+        batch_size: int = BATCH_SIZE,
+    ):
 
-    vectors_to_be_deleted_count = len(data_point_vectors)
-    deleted_vectors_count = 0
+        vectors_to_be_deleted_count = len(data_point_vectors)
+        deleted_vectors_count = 0
 
-    # delete the vectors in batches
-    for i in range(0, vectors_to_be_deleted_count, batch_size):
-        data_point_vectors_to_be_processed = data_point_vectors[i : i + batch_size]
-        # Delete the vectors from the db
-        self.qdrant_client.delete(
-            collection_name=collection_name,
-            points_selector=models.PointIdsList(
-                points=[
-                    document_vector_point.data_point_vector_id
-                    for document_vector_point in data_point_vectors_to_be_processed
-                ],
-            ),
-        )
-        # Increment the deleted vectors count
-        deleted_vectors_count = deleted_vectors_count + len(
-            data_point_vectors_to_be_processed
-        )
+        # delete the vectors in batches
+        for i in range(0, vectors_to_be_deleted_count, batch_size):
+            data_point_vectors_to_be_processed = data_point_vectors[i : i + batch_size]
+            # Delete the vectors from the db
+            self.qdrant_client.delete(
+                collection_name=collection_name,
+                points_selector=models.PointIdsList(
+                    points=[
+                        document_vector_point.data_point_vector_id
+                        for document_vector_point in data_point_vectors_to_be_processed
+                    ],
+                ),
+            )
+            # Increment the deleted vectors count
+            deleted_vectors_count = deleted_vectors_count + len(data_point_vectors_to_be_processed)
 ```
 
 ### SingleStore
@@ -375,7 +376,7 @@ SingleStore offers powerful vector database functionality perfectly suited for A
 
 SingleStore provides a free tier for developers to get started with their vector database. You can sign up for a free account [here](https://www.singlestore.com/cloud-trial/). Upon signup, go to `Cloud` -> `workspace` -> `Create User`. Use the credentials to connect to the SingleStore instance.
 
-> In .env `VECTOR_DB_CONFIG = '{"url": "<url_here>", "provider": "singlestore"}'` # url: mysql://{user}:{password}@{host}:{port}/{db}
+> In .env file: VECTOR_DB_CONFIG = '{"url": "<url_here>", "provider": "singlestore"}'
 
 To add SingleStore vector db to the RAG system, follow the below steps:
 
@@ -486,40 +487,40 @@ class SSDB(SingleStoreDB):
 1. Create a new class `SingleStoreVectorDB` in `backend/modules/vector_db/singlestore.py` that inherits from `BaseVectorDB` and initialize it with `VectorDBConfig`
 
 ```python
-  class SingleStoreVectorDB(BaseVectorDB):
-    def __init__(self, config: VectorDBConfig):
-        self.host = config.url
+    class SingleStoreVectorDB(BaseVectorDB):
+        def __init__(self, config: VectorDBConfig):
+            # url: mysql://{user}:{password}@{host}:{port}/{db}
+            self.host = config.url
 ```
 
 2. Override the `create_collection` method to create a collection in SingleStore
 
 ```python
-  def create_collection(self, collection_name: str, embeddings: Embeddings):
-    # Calculate embedding size
-    partial_embeddings = embeddings.embed_documents(["Initial document"])
-    vector_size = len(partial_embeddings[0])
+    def create_collection(self, collection_name: str, embeddings: Embeddings):
+        # Calculate embedding size
+        partial_embeddings = embeddings.embed_documents(["Initial document"])
+        vector_size = len(partial_embeddings[0])
 
-    # Create collection
-    # we keep vector_filed, content_field as default values
-    SSDB(
-        embedding=embeddings,
-        host=self.host,
-        table_name=collection_name,
-        vector_size=vector_size,
-        use_vector_index=True,
-        # metadata_field=f"metadata.{DATA_POINT_FQN_METADATA_KEY}",
-    )
+        # Create collection
+        # we keep vector_filed, content_field as default values
+        SSDB(
+            embedding=embeddings,
+            host=self.host,
+            table_name=collection_name,
+            vector_size=vector_size,
+            use_vector_index=True,
+        )
 ```
 
 3. Override the `upsert_documents` method to insert the documents in the db
 
 ```python
-  def upsert_documents(
-      self,
-      collection_name: str,
-      documents: List[Document],
-      embeddings: Embeddings,
-      incremental: bool = True,
+    def upsert_documents(
+        self,
+        collection_name: str,
+        documents: List[Document],
+        embeddings: Embeddings,
+        incremental: bool = True,
     ):
         # Get the data point fqns from the documents
         data_point_fqns = []
@@ -549,83 +550,81 @@ class SSDB(SingleStoreDB):
 4. Override the `get_collections` method to get all the collections present in the db
 
 ```python
-  def get_collections(self) -> List[str]:
-
-    # Create connection to SingleStore
-    conn = s2.connect(self.host)
-    try:
-        cur = conn.cursor()
+    def get_collections(self) -> List[str]:
+        # Create connection to SingleStore
+        conn = s2.connect(self.host)
         try:
-            # Get all the tables in the db
-            cur.execute("SHOW TABLES")
-            return [row[0] for row in cur.fetchall()]
+            cur = conn.cursor()
+            try:
+                # Get all the tables in the db
+                cur.execute("SHOW TABLES")
+                return [row[0] for row in cur.fetchall()]
+            except Exception as e:
+                logger.error(
+                    f"[SingleStore] Failed to get collections: {e}"
+                )
+            finally:
+                cur.close()
         except Exception as e:
             logger.error(
                 f"[SingleStore] Failed to get collections: {e}"
             )
         finally:
-            cur.close()
-    except Exception as e:
-        logger.error(
-            f"[SingleStore] Failed to get collections: {e}"
-        )
-    finally:
-        conn.close()
+            conn.close()
 ```
 
 5. Override the `delete_collection` method to delete the collection from the db
 
 ```python
-  def delete_collection(self, collection_name: str):
-
-    # Create connection to SingleStore
-    conn = s2.connect(self.host)
-    try:
-        cur = conn.cursor()
+    def delete_collection(self, collection_name: str):
+        # Create connection to SingleStore
+        conn = s2.connect(self.host)
         try:
-            # Drop the table
-            cur.execute(f"DROP TABLE {collection_name}")
-            logger.debug(f"[SingleStore] Deleted collection {collection_name}")
+            cur = conn.cursor()
+            try:
+                # Drop the table
+                cur.execute(f"DROP TABLE {collection_name}")
+                logger.debug(f"[SingleStore] Deleted collection {collection_name}")
+            except Exception as e:
+                logger.error(
+                    f"[SingleStore] Failed to delete collection {collection_name}: {e}"
+                )
+            finally:
+                cur.close()
         except Exception as e:
             logger.error(
                 f"[SingleStore] Failed to delete collection {collection_name}: {e}"
             )
         finally:
-            cur.close()
-    except Exception as e:
-        logger.error(
-            f"[SingleStore] Failed to delete collection {collection_name}: {e}"
-        )
-    finally:
-        conn.close()
+            conn.close()
 ```
 
 6. Override the `get_vector_store` method to get the vector store for the given collection
 
 ```python
-  def get_vector_store(self, collection_name: str, embeddings: Embeddings):
-      return SSDB(
-          embedding=embeddings,
-          host=self.host,
-          table_name=collection_name,
-      )
+    def get_vector_store(self, collection_name: str, embeddings: Embeddings):
+        return SSDB(
+            embedding=embeddings,
+            host=self.host,
+            table_name=collection_name,
+        )
 ```
 
 7. Override the `get_vector_client` method to get the vector client for the given collection if any
 
 ```python
-  def get_vector_client(self):
-    return s2.connect(self.host)
+    def get_vector_client(self):
+        return s2.connect(self.host)
 ```
 
 8. Override the `list_data_point_vectors` method to list already present vectors in the db that are similar to the documents being inserted
 
 ```python
-  def list_data_point_vectors(
-      self,
-      collection_name: str,
-      data_source_fqn: str,
-  ) -> List[DataPointVector]:
+    def list_data_point_vectors(
+        self,
+        collection_name: str,
+        data_source_fqn: str,
+    ) -> List[DataPointVector]:
         data_point_vectors: List[DataPointVector] = []
         logger.debug(f"data_source_fqn: {data_source_fqn}")
 
@@ -669,33 +668,33 @@ class SSDB(SingleStoreDB):
 9. Override the `delete_data_point_vectors` method to delete the vectors from the db, used to remove old vectors of the updated document
 
 ```python
-  def delete_data_point_vectors(
-      self,
-      collection_name: str,
-      data_point_vectors: List[DataPointVector],
-      batch_size: int =BATCH_SIZE,
-  ):
-      if len(data_point_vectors) > 0:
-          # Create connection to SingleStore
-          conn = s2.connect(self.host)
+    def delete_data_point_vectors(
+        self,
+        collection_name: str,
+        data_point_vectors: List[DataPointVector],
+        batch_size: int =BATCH_SIZE,
+    ):
+        if len(data_point_vectors) > 0:
+            # Create connection to SingleStore
+            conn = s2.connect(self.host)
 
-          try:
-              vectors_to_be_deleted_count = len(data_point_vectors)
-              curr = conn.cursor()
+            try:
+                vectors_to_be_deleted_count = len(data_point_vectors)
+                curr = conn.cursor()
 
-              # Delete the vectors as per the data_point_vector_id
-              curr.execute(
-                  f"DELETE FROM {collection_name} WHERE id in ({', '.join(data_point_vector.data_point_vector_id for data_point_vector in data_point_vectors)})"
-              )
-              logger.debug(
-                  f"[SingleStore] Deleted {vectors_to_be_deleted_count} data point vectors"
-              )
-          except Exception as e:
-              logger.error(
-                  f"[SingleStore] Failed to delete data point vectors: {e}"
-              )
-          finally:
-              conn.close()
+                # Delete the vectors as per the data_point_vector_id
+                curr.execute(
+                    f"DELETE FROM {collection_name} WHERE id in ({', '.join(data_point_vector.data_point_vector_id for data_point_vector in data_point_vectors)})"
+                )
+                logger.debug(
+                    f"[SingleStore] Deleted {vectors_to_be_deleted_count} data point vectors"
+                )
+            except Exception as e:
+                logger.error(
+                    f"[SingleStore] Failed to delete data point vectors: {e}"
+                )
+            finally:
+                conn.close()
 ```
 
 ### Metadata Store
