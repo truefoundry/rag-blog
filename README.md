@@ -189,16 +189,16 @@ We now show how we can add a new vector db to the RAG system. We take example of
 
         # Delete Documents
         if len(record_ids_to_be_upserted):
-        for i in range(0, len(record_ids_to_be_upserted), BATCH_SIZE):
-            record_ids_to_be_processed = record_ids_to_be_upserted[
-                i : i + BATCH_SIZE
-            ]
-            self.qdrant_client.delete(
-                collection_name=collection_name,
-                points_selector=models.PointIdsList(
-                    points=record_ids_to_be_processed,
-                ),
-            )
+            for i in range(0, len(record_ids_to_be_upserted), BATCH_SIZE):
+                record_ids_to_be_processed = record_ids_to_be_upserted[
+                    i : i + BATCH_SIZE
+                ]
+                self.qdrant_client.delete(
+                    collection_name=collection_name,
+                    points_selector=models.PointIdsList(
+                        points=record_ids_to_be_processed,
+                    ),
+                )
 
     # This method is used to get the records that are already present in the db
     def _get_records_to_be_upserted(
