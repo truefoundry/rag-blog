@@ -380,7 +380,7 @@ SingleStore provides a free tier for developers to get started with their vector
 
 To add SingleStore vector db to the RAG system, follow the below steps:
 
-0. We want to add extra columns to table to store vector id hence, we override SingleStoreDB.
+1. We want to add extra columns to table to store vector id hence, we override SingleStoreDB.
 
     ```python
     from langchain_community.vectorstores.singlestoredb import SingleStoreDB
@@ -484,7 +484,7 @@ To add SingleStore vector db to the RAG system, follow the below steps:
             return []
     ```
 
-1. Create a new class `SingleStoreVectorDB` in `backend/modules/vector_db/singlestore.py` that inherits from `BaseVectorDB` and initialize it with `VectorDBConfig`
+2. Create a new class `SingleStoreVectorDB` in `backend/modules/vector_db/singlestore.py` that inherits from `BaseVectorDB` and initialize it with `VectorDBConfig`
 
     ```python
     class SingleStoreVectorDB(BaseVectorDB):
@@ -493,7 +493,7 @@ To add SingleStore vector db to the RAG system, follow the below steps:
             self.host = config.url
     ```
 
-2. Override the `create_collection` method to create a collection in SingleStore
+3. Override the `create_collection` method to create a collection in SingleStore
 
     ```python
     def create_collection(self, collection_name: str, embeddings: Embeddings):
@@ -512,7 +512,7 @@ To add SingleStore vector db to the RAG system, follow the below steps:
         )
     ```
 
-3. Override the `upsert_documents` method to insert the documents in the db
+4. Override the `upsert_documents` method to insert the documents in the db
 
     ```python
     def upsert_documents(
@@ -547,7 +547,7 @@ To add SingleStore vector db to the RAG system, follow the below steps:
             )
     ```
 
-4. Override the `get_collections` method to get all the collections present in the db
+5. Override the `get_collections` method to get all the collections present in the db
 
     ```python
     def get_collections(self) -> List[str]:
@@ -573,7 +573,7 @@ To add SingleStore vector db to the RAG system, follow the below steps:
             conn.close()
     ```
 
-5. Override the `delete_collection` method to delete the collection from the db
+6. Override the `delete_collection` method to delete the collection from the db
 
     ```python
     def delete_collection(self, collection_name: str):
@@ -599,7 +599,7 @@ To add SingleStore vector db to the RAG system, follow the below steps:
             conn.close()
     ```
 
-6. Override the `get_vector_store` method to get the vector store for the given collection
+7. Override the `get_vector_store` method to get the vector store for the given collection
 
     ```python
     def get_vector_store(self, collection_name: str, embeddings: Embeddings):
@@ -610,14 +610,14 @@ To add SingleStore vector db to the RAG system, follow the below steps:
         )
     ```
 
-7. Override the `get_vector_client` method to get the vector client for the given collection if any
+8. Override the `get_vector_client` method to get the vector client for the given collection if any
 
     ```python
     def get_vector_client(self):
         return s2.connect(self.host)
     ```
 
-8. Override the `list_data_point_vectors` method to list already present vectors in the db that are similar to the documents being inserted
+9. Override the `list_data_point_vectors` method to list already present vectors in the db that are similar to the documents being inserted
 
     ```python
     def list_data_point_vectors(
@@ -665,7 +665,7 @@ To add SingleStore vector db to the RAG system, follow the below steps:
         return data_point_vectors
     ```
 
-9. Override the `delete_data_point_vectors` method to delete the vectors from the db, used to remove old vectors of the updated document
+10. Override the `delete_data_point_vectors` method to delete the vectors from the db, used to remove old vectors of the updated document
 
     ```python
     def delete_data_point_vectors(
