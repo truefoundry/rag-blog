@@ -716,7 +716,7 @@ We currently define two ways to store this data, one `locally` and other using `
 Once the data is indexed and stored in vector db, now it's time to combine all the parts together to use our app. Query Controllers just do that! They help us retrieve answer for the corresponding user query. A typical query controller steps are as follows:
 
 1.  Users sends a request payload that contains the query, collection name, llm configuration, promt, retriever and it's configuration.
-2.  Based on the `collection name` releavant `vector db` is fectched with it's configuration like embedder used, vetcor db type, etc
+2.  Based on the `collection name` releavant `vector db` is fectched with it's configuration like embedder used, vector db type, etc
 3.  Based on the `query`, relevant docs are retrieved using the `retriever` from vector db.
 4.  The fetched documents form the `context` and along with the query a.k.a `question` is given to the `LLM` to generate the answer. This step can also involve prompt tuning.
 5.  If required, along with the generated answer relevant document chunks are also returned in the response.
