@@ -108,26 +108,26 @@ We now show how we can add a new vector db to the RAG system. We take example of
 
 1. Create a new class `QdrantVectorDB` in `backend/modules/vector_db/qdrant.py` that inherits from `BaseVectorDB` and initialize it with `VectorDBConfig`
 
-```python
+    ```python
     from langchain_community.vectorstores.qdrant import Qdrant
     from qdrant_client.http.models import VectorParams, Distance
     from qdrant_client import QdrantClient, models
 
     class QdrantVectorDB(BaseVectorDB):
-    def __init__(self, config: VectorDBConfig):
-        ...
-        # Initialize the qdrant client
-        self.qdrant_client = QdrantClient(
-            url=self.url,
-            port=self.port,
-            prefer_grpc=self.prefer_grpc,
-            prefix=self.prefix,
-        )
-```
+        def __init__(self, config: VectorDBConfig):
+            ...
+            # Initialize the qdrant client
+            self.qdrant_client = QdrantClient(
+                url=self.url,
+                port=self.port,
+                prefer_grpc=self.prefer_grpc,
+                prefix=self.prefix,
+            )
+    ```
 
 2. Override the `create_collection` method to create a collection in Qdrant
 
-```python
+    ```python
     def create_collection(self, collection_name: str, embeddings: Embeddings):
         # Calculate embedding size
         partial_embeddings = embeddings.embed_documents(["Initial document"])
@@ -149,11 +149,11 @@ We now show how we can add a new vector db to the RAG system. We take example of
             field_name=f"metadata.{DATA_POINT_FQN_METADATA_KEY}",
             field_schema=models.PayloadSchemaType.KEYWORD,
         )
-```
+    ```
 
 3. Override the `upsert_documents` method to insert the documents in the db
 
-```python
+    ```python
     def upsert_documents(
         self,
         collection_name: str,
@@ -242,44 +242,44 @@ We now show how we can add a new vector db to the RAG system. We take example of
             else:
                 offset = next_offset
         return record_ids_to_be_upserted
-```
+    ```
 
 4. Override the `get_collections` method to get all the collections present in the db
 
-```python
+    ```python
     def get_collections(self):
         collections = self.qdrant_client.list_collections()
         return [collection.name for collection in collections]
-```
+    ```
 
 5. Override the `delete_collection` method to delete the collection from the db
 
-```python
+    ```python
     def delete_collection(self, collection_name: str):
         self.qdrant_client.delete_collection(collection_name=collection_name)
-```
+    ```
 
 6. Override the `get_vector_store` method to get the vector store for the given collection
 
-```python
+    ```python
     def get_vector_store(self, collection_name: str, embeddings: Embeddings):
         return Qdrant(
                 client=self.qdrant_client,
                 embeddings=embeddings,
                 collection_name=collection_name,
             )
-```
+    ```
 
 7. Override the `get_vector_client` method to get the vector client for the given collection if any
 
-```python
+    ```python
     def get_vector_client(self):
         return self.qdrant_client
-```
+    ```
 
 8. Override the `list_data_point_vectors` method to list already present vectors in the db that are similar to the documents being inserted
 
-```python
+    ```python
     def list_data_point_vectors(
         self, collection_name: str,
         data_source_fqn: str,
@@ -338,11 +338,11 @@ We now show how we can add a new vector db to the RAG system. We take example of
             else:
                 offset = next_offset
         return data_point_vectors
-```
+    ```
 
 9. Override the `delete_data_point_vectors` method to delete the vectors from the db, used to remove old vectors of the updated document
 
-```python
+    ```python
     def delete_data_point_vectors(
         self,
         collection_name: str,
@@ -368,7 +368,7 @@ We now show how we can add a new vector db to the RAG system. We take example of
             )
             # Increment the deleted vectors count
             deleted_vectors_count = deleted_vectors_count + len(data_point_vectors_to_be_processed)
-```
+    ```
 
 ### SingleStore
 
@@ -382,120 +382,120 @@ To add SingleStore vector db to the RAG system, follow the below steps:
 
 0. We want to add extra columns to table to store vector id hence, we override SingleStoreDB.
 
-```python
-from langchain_community.vectorstores.singlestoredb import SingleStoreDB
-import singlestoredb as s2
+    ```python
+    from langchain_community.vectorstores.singlestoredb import SingleStoreDB
+    import singlestoredb as s2
 
-class SSDB(SingleStoreDB):
-    def _create_table(self: SingleStoreDB) -> None:
-        """Create table if it doesn't exist."""
-        conn = self.connection_pool.connect()
-        try:
-            cur = conn.cursor()
-            # Overriding the default table creation behaviour this adds id as autoinc primary key
+    class SSDB(SingleStoreDB):
+        def _create_table(self: SingleStoreDB) -> None:
+            """Create table if it doesn't exist."""
+            conn = self.connection_pool.connect()
             try:
-                if self.use_vector_index:
-                    index_options = ""
-                    if self.vector_index_options and len(self.vector_index_options) > 0:
-                        index_options = "INDEX_OPTIONS '{}'".format(
-                            json.dumps(self.vector_index_options)
+                cur = conn.cursor()
+                # Overriding the default table creation behaviour this adds id as autoinc primary key
+                try:
+                    if self.use_vector_index:
+                        index_options = ""
+                        if self.vector_index_options and len(self.vector_index_options) > 0:
+                            index_options = "INDEX_OPTIONS '{}'".format(
+                                json.dumps(self.vector_index_options)
+                            )
+                        cur.execute(
+                            """CREATE TABLE IF NOT EXISTS {}
+                            (id BIGINT AUTO_INCREMENT PRIMARY KEY, {} TEXT CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci,
+                            {} VECTOR({}, F32) NOT NULL, {} JSON,
+                            VECTOR INDEX {} ({}) {});""".format(
+                                self.table_name,
+                                self.content_field,
+                                self.vector_field,
+                                self.vector_size,
+                                self.metadata_field,
+                                self.vector_index_name,
+                                self.vector_field,
+                                index_options,
+                            ),
                         )
-                    cur.execute(
-                        """CREATE TABLE IF NOT EXISTS {}
-                        (id BIGINT AUTO_INCREMENT PRIMARY KEY, {} TEXT CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci,
-                        {} VECTOR({}, F32) NOT NULL, {} JSON,
-                        VECTOR INDEX {} ({}) {});""".format(
-                            self.table_name,
-                            self.content_field,
-                            self.vector_field,
-                            self.vector_size,
-                            self.metadata_field,
-                            self.vector_index_name,
-                            self.vector_field,
-                            index_options,
-                        ),
-                    )
-                else:
-                    cur.execute(
-                        """CREATE TABLE IF NOT EXISTS {}
-                        (id BIGINT AUTO_INCREMENT PRIMARY KEY, {} TEXT CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci,
-                        {} BLOB, {} JSON);""".format(
-                            self.table_name,
-                            self.content_field,
-                            self.vector_field,
-                            self.metadata_field,
-                        ),
-                    )
+                    else:
+                        cur.execute(
+                            """CREATE TABLE IF NOT EXISTS {}
+                            (id BIGINT AUTO_INCREMENT PRIMARY KEY, {} TEXT CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci,
+                            {} BLOB, {} JSON);""".format(
+                                self.table_name,
+                                self.content_field,
+                                self.vector_field,
+                                self.metadata_field,
+                            ),
+                        )
+                finally:
+                    cur.close()
             finally:
-                cur.close()
-        finally:
-            conn.close()
+                conn.close()
 
 
-    def add_texts(
-        self,
-        texts: Iterable[str],
-        metadatas: Optional[List[dict]] = None,
-        embeddings: Optional[List[List[float]]] = None,
-        **kwargs: Any,
-    ) -> List[str]:
-        """Add more texts to the vectorstore.
+        def add_texts(
+            self,
+            texts: Iterable[str],
+            metadatas: Optional[List[dict]] = None,
+            embeddings: Optional[List[List[float]]] = None,
+            **kwargs: Any,
+        ) -> List[str]:
+            """Add more texts to the vectorstore.
 
-        Args:
-            texts (Iterable[str]): Iterable of strings/text to add to the vectorstore.
-            metadatas (Optional[List[dict]], optional): Optional list of metadatas.
-                Defaults to None.
-            embeddings (Optional[List[List[float]]], optional): Optional pre-generated
-                embeddings. Defaults to None.
+            Args:
+                texts (Iterable[str]): Iterable of strings/text to add to the vectorstore.
+                metadatas (Optional[List[dict]], optional): Optional list of metadatas.
+                    Defaults to None.
+                embeddings (Optional[List[List[float]]], optional): Optional pre-generated
+                    embeddings. Defaults to None.
 
-        Returns:
-            List[str]: empty list
-        """
-        conn = self.connection_pool.connect()
-        try:
-            cur = conn.cursor()
+            Returns:
+                List[str]: empty list
+            """
+            conn = self.connection_pool.connect()
             try:
-                # Write data to singlestore db
-                for i, text in enumerate(texts):
-                    # Use provided values by default or fallback
-                    metadata = metadatas[i] if metadatas else {}
-                    embedding = (
-                        embeddings[i]
-                        if embeddings
-                        else self.embedding.embed_documents([text])[0]
-                    )
-                    # Overriding insert statement to handle autoincrement id
-                    cur.execute(
-                        "INSERT INTO {} (content, vector, metadata) VALUES (%s, JSON_ARRAY_PACK(%s), %s)".format(
-                            self.table_name
-                        ),
-                        (
-                            text,
-                            "[{}]".format(",".join(map(str, embedding))),
-                            json.dumps(metadata),
-                        ),
-                    )
-                if self.use_vector_index:
-                    cur.execute("OPTIMIZE TABLE {} FLUSH;".format(self.table_name))
+                cur = conn.cursor()
+                try:
+                    # Write data to singlestore db
+                    for i, text in enumerate(texts):
+                        # Use provided values by default or fallback
+                        metadata = metadatas[i] if metadatas else {}
+                        embedding = (
+                            embeddings[i]
+                            if embeddings
+                            else self.embedding.embed_documents([text])[0]
+                        )
+                        # Overriding insert statement to handle autoincrement id
+                        cur.execute(
+                            "INSERT INTO {} (content, vector, metadata) VALUES (%s, JSON_ARRAY_PACK(%s), %s)".format(
+                                self.table_name
+                            ),
+                            (
+                                text,
+                                "[{}]".format(",".join(map(str, embedding))),
+                                json.dumps(metadata),
+                            ),
+                        )
+                    if self.use_vector_index:
+                        cur.execute("OPTIMIZE TABLE {} FLUSH;".format(self.table_name))
+                finally:
+                    cur.close()
             finally:
-                cur.close()
-        finally:
-            conn.close()
-        return []
-```
+                conn.close()
+            return []
+    ```
 
 1. Create a new class `SingleStoreVectorDB` in `backend/modules/vector_db/singlestore.py` that inherits from `BaseVectorDB` and initialize it with `VectorDBConfig`
 
-```python
+    ```python
     class SingleStoreVectorDB(BaseVectorDB):
         def __init__(self, config: VectorDBConfig):
             # url: mysql://{user}:{password}@{host}:{port}/{db}
             self.host = config.url
-```
+    ```
 
 2. Override the `create_collection` method to create a collection in SingleStore
 
-```python
+    ```python
     def create_collection(self, collection_name: str, embeddings: Embeddings):
         # Calculate embedding size
         partial_embeddings = embeddings.embed_documents(["Initial document"])
@@ -510,11 +510,11 @@ class SSDB(SingleStoreDB):
             vector_size=vector_size,
             use_vector_index=True,
         )
-```
+    ```
 
 3. Override the `upsert_documents` method to insert the documents in the db
 
-```python
+    ```python
     def upsert_documents(
         self,
         collection_name: str,
@@ -545,11 +545,11 @@ class SSDB(SingleStoreDB):
             logger.error(
                 f"[SingleStore] Failed to add documents to collection {collection_name}: {e}"
             )
-```
+    ```
 
 4. Override the `get_collections` method to get all the collections present in the db
 
-```python
+    ```python
     def get_collections(self) -> List[str]:
         # Create connection to SingleStore
         conn = s2.connect(self.host)
@@ -571,11 +571,11 @@ class SSDB(SingleStoreDB):
             )
         finally:
             conn.close()
-```
+    ```
 
 5. Override the `delete_collection` method to delete the collection from the db
 
-```python
+    ```python
     def delete_collection(self, collection_name: str):
         # Create connection to SingleStore
         conn = s2.connect(self.host)
@@ -597,29 +597,29 @@ class SSDB(SingleStoreDB):
             )
         finally:
             conn.close()
-```
+    ```
 
 6. Override the `get_vector_store` method to get the vector store for the given collection
 
-```python
+    ```python
     def get_vector_store(self, collection_name: str, embeddings: Embeddings):
         return SSDB(
             embedding=embeddings,
             host=self.host,
             table_name=collection_name,
         )
-```
+    ```
 
 7. Override the `get_vector_client` method to get the vector client for the given collection if any
 
-```python
+    ```python
     def get_vector_client(self):
         return s2.connect(self.host)
-```
+    ```
 
 8. Override the `list_data_point_vectors` method to list already present vectors in the db that are similar to the documents being inserted
 
-```python
+    ```python
     def list_data_point_vectors(
         self,
         collection_name: str,
@@ -663,11 +663,11 @@ class SSDB(SingleStoreDB):
             f"[SingleStore] Listing {len(data_point_vectors)} data point vectors for collection {collection_name}"
         )
         return data_point_vectors
-```
+    ```
 
 9. Override the `delete_data_point_vectors` method to delete the vectors from the db, used to remove old vectors of the updated document
 
-```python
+    ```python
     def delete_data_point_vectors(
         self,
         collection_name: str,
@@ -695,7 +695,7 @@ class SSDB(SingleStoreDB):
                 )
             finally:
                 conn.close()
-```
+    ```
 
 ### Metadata Store
 
